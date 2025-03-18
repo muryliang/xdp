@@ -37,20 +37,16 @@ func (p *Program) Register(queueID int, fd int) error {
 		return fmt.Errorf("failed to update xsksMap: %v", err)
 	}
 
-	if p.Queues != nil {
-		if err := p.Queues.Put(uint32(queueID), uint32(1)); err != nil {
-			return fmt.Errorf("failed to update qidconfMap: %v", err)
-		}
+	if err := p.Queues.Put(uint32(queueID), uint32(1)); err != nil {
+		return fmt.Errorf("failed to update qidconfMap: %v", err)
 	}
 	return nil
 }
 
 // Unregister removes any associated mapping to sockets for the given queueID.
 func (p *Program) Unregister(queueID int) error {
-	if p.Queues != nil {
-		if err := p.Queues.Delete(uint32(queueID)); err != nil {
-			return err
-		}
+	if err := p.Queues.Delete(uint32(queueID)); err != nil {
+		return err
 	}
 	if err := p.Sockets.Delete(uint32(queueID)); err != nil {
 		return err
@@ -239,7 +235,7 @@ func LoadProgram(fname, funcname, qidmapname, xskmapname string) (*Program, erro
 		return nil, fmt.Errorf("%v doesn't contain a function named %v", fname, funcname)
 	}
 	if prog.Queues, ok = col.Maps[qidmapname]; !ok {
-		fmt.Printf("%v doesn't contain a queue map named %v, continue\n", fname, qidmapname)
+		return nil, fmt.Errorf("%v doesn't contain a queue map named %v", fname, qidmapname)
 	}
 	if prog.Sockets, ok = col.Maps[xskmapname]; !ok {
 		return nil, fmt.Errorf("%v doesn't contain a socket map named %v", fname, xskmapname)
