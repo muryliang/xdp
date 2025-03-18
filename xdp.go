@@ -165,6 +165,11 @@ type SocketOptions struct {
 	TxRingNumDescs         int
 }
 
+type SocketFlags struct {
+	Flags uint16
+	Fd    uint32
+}
+
 // Desc represents an XDP Rx/Tx descriptor.
 type Desc unix.XDPDesc
 
@@ -196,7 +201,10 @@ type Stats struct {
 // DefaultSocketFlags are the flags which are passed to bind(2) system call
 // when the XDP socket is bound, possible values include unix.XDP_SHARED_UMEM,
 // unix.XDP_COPY, unix.XDP_ZEROCOPY.
-var DefaultSocketFlags uint16
+var DefaultSocketFlags = SocketFlags{
+	Flags: 0,
+	Fd:    0,
+}
 
 // DefaultXdpFlags are the flags which are passed when the XDP program is
 // attached to the network link, possible values include
@@ -205,14 +213,13 @@ var DefaultSocketFlags uint16
 var DefaultXdpFlags uint32
 
 func init() {
-	DefaultSocketFlags = 0
 	DefaultXdpFlags = 0
 }
 
 // NewSocket returns a new XDP socket attached to the network interface which
 // has the given interface, and attached to the given queue on that network
 // interface.
-func NewSocket(Ifindex int, QueueID int, options *SocketOptions, flags *uint16) (xsk *Socket, err error) {
+func NewSocket(Ifindex int, QueueID int, options *SocketOptions, flags *SocketFlags) (xsk *Socket, err error) {
 	if options == nil {
 		options = &DefaultSocketOptions
 	}
@@ -377,9 +384,10 @@ func NewSocket(Ifindex int, QueueID int, options *SocketOptions, flags *uint16) 
 	}
 
 	sa := unix.SockaddrXDP{
-		Flags:   *flags,
-		Ifindex: uint32(Ifindex),
-		QueueID: uint32(QueueID),
+		Flags:        flags.Flags,
+		Ifindex:      uint32(Ifindex),
+		QueueID:      uint32(QueueID),
+		SharedUmemFD: flags.Fd,
 	}
 	if err = unix.Bind(xsk.fd, &sa); err != nil {
 		xsk.Close()
