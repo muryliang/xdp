@@ -202,8 +202,8 @@ type Stats struct {
 // when the XDP socket is bound, possible values include unix.XDP_SHARED_UMEM,
 // unix.XDP_COPY, unix.XDP_ZEROCOPY.
 var DefaultSocketFlags = SocketFlags{
-	Flags: 0,
-	Fd:    0,
+	Flags:     0,
+	SharedXsk: nil,
 }
 
 // DefaultXdpFlags are the flags which are passed when the XDP program is
@@ -388,10 +388,12 @@ func NewSocket(Ifindex int, QueueID int, options *SocketOptions, flags *SocketFl
 	}
 
 	sa := unix.SockaddrXDP{
-		Flags:        flags.Flags,
-		Ifindex:      uint32(Ifindex),
-		QueueID:      uint32(QueueID),
-		SharedUmemFD: uint32(flags.SharedXsk.FD()),
+		Flags:   flags.Flags,
+		Ifindex: uint32(Ifindex),
+		QueueID: uint32(QueueID),
+	}
+	if flags.SharedXsk != nil {
+		sa.SharedUmemFD = uint32(flags.SharedXsk.FD())
 	}
 	if err = unix.Bind(xsk.fd, &sa); err != nil {
 		xsk.Close()
