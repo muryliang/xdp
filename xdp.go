@@ -166,8 +166,8 @@ type SocketOptions struct {
 }
 
 type SocketFlags struct {
-	Flags uint16
-	Fd    uint32
+	Flags     uint16
+	SharedXsk *Socket
 }
 
 // Desc represents an XDP Rx/Tx descriptor.
@@ -234,31 +234,35 @@ func NewSocket(Ifindex int, QueueID int, options *SocketOptions, flags *SocketFl
 		return nil, fmt.Errorf("syscall.Socket failed: %v", err)
 	}
 
-	xsk.umem, err = syscall.Mmap(-1, 0, options.NumFrames*options.FrameSize,
-		syscall.PROT_READ|syscall.PROT_WRITE,
-		syscall.MAP_PRIVATE|syscall.MAP_ANONYMOUS|syscall.MAP_POPULATE)
-	if err != nil {
-		xsk.Close()
-		return nil, fmt.Errorf("syscall.Mmap failed: %v", err)
-	}
-
-	xdpUmemReg := unix.XDPUmemReg{
-		Addr:     uint64(uintptr(unsafe.Pointer(&xsk.umem[0]))),
-		Len:      uint64(len(xsk.umem)),
-		Size:     uint32(options.FrameSize),
-		Headroom: 0,
-	}
-
-	var errno syscall.Errno
 	var rc uintptr
+	var errno syscall.Errno
 
-	rc, _, errno = unix.Syscall6(syscall.SYS_SETSOCKOPT, uintptr(xsk.fd),
-		unix.SOL_XDP, unix.XDP_UMEM_REG,
-		uintptr(unsafe.Pointer(&xdpUmemReg)),
-		unsafe.Sizeof(xdpUmemReg), 0)
-	if rc != 0 {
-		xsk.Close()
-		return nil, fmt.Errorf("unix.SetsockoptUint64 XDP_UMEM_REG failed: %v", errno)
+	if flags.Flags&unix.XDP_SHARED_UMEM != 0 {
+		xsk.umem = flags.SharedXsk.umem
+	} else {
+		xsk.umem, err = syscall.Mmap(-1, 0, options.NumFrames*options.FrameSize,
+			syscall.PROT_READ|syscall.PROT_WRITE,
+			syscall.MAP_PRIVATE|syscall.MAP_ANONYMOUS|syscall.MAP_POPULATE)
+		if err != nil {
+			xsk.Close()
+			return nil, fmt.Errorf("syscall.Mmap failed: %v", err)
+		}
+
+		xdpUmemReg := unix.XDPUmemReg{
+			Addr:     uint64(uintptr(unsafe.Pointer(&xsk.umem[0]))),
+			Len:      uint64(len(xsk.umem)),
+			Size:     uint32(options.FrameSize),
+			Headroom: 0,
+		}
+
+		rc, _, errno = unix.Syscall6(syscall.SYS_SETSOCKOPT, uintptr(xsk.fd),
+			unix.SOL_XDP, unix.XDP_UMEM_REG,
+			uintptr(unsafe.Pointer(&xdpUmemReg)),
+			unsafe.Sizeof(xdpUmemReg), 0)
+		if rc != 0 {
+			xsk.Close()
+			return nil, fmt.Errorf("unix.SetsockoptUint64 XDP_UMEM_REG failed: %v", errno)
+		}
 	}
 
 	err = syscall.SetsockoptInt(xsk.fd, unix.SOL_XDP, unix.XDP_UMEM_FILL_RING,
@@ -387,7 +391,7 @@ func NewSocket(Ifindex int, QueueID int, options *SocketOptions, flags *SocketFl
 		Flags:        flags.Flags,
 		Ifindex:      uint32(Ifindex),
 		QueueID:      uint32(QueueID),
-		SharedUmemFD: flags.Fd,
+		SharedUmemFD: uint32(flags.SharedXsk.FD()),
 	}
 	if err = unix.Bind(xsk.fd, &sa); err != nil {
 		xsk.Close()
